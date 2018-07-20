@@ -7,3 +7,5 @@ authors = ["Daniel Kiss <littlesnorrboy@gmail.com>"]
 csv = "1"
 serde = "1.0.70"
 serde_derive = "1.0.70"
+kaggle_core = { path = "../kaggle_core" }
+rand = "0.5"

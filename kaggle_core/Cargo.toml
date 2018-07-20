@@ -1,0 +1,6 @@
+[package]
+name = "kaggle_core"
+version = "0.1.0"
+authors = ["Daniel Kiss <littlesnorrboy@gmail.com>"]
+
+[dependencies]

@@ -1,13 +1,15 @@
 extern crate csv;
 #[macro_use]
 extern crate serde_derive;
-
 #[macro_use]
-mod kdtree;
+extern crate kaggle_core;
+extern crate rand;
 
 use std::error::Error;
 use std::fs::File;
 use std::rc::Rc;
+
+use rand::{thread_rng, Rng};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct TrainingPassangerDTO {
@@ -37,38 +39,80 @@ pub struct TrainingPassangerDTO {
     embarked: Option<char>,
 }
 
-fn read_training_data() -> Result<Vec<TrainingPassangerDTO>, Box<Error>> {
+#[derive(Debug, Deserialize, Clone)]
+pub struct ResultDTO {
+    #[serde(rename = "PassengerId")]
+    passenger_id: String,
+    #[serde(rename = "Survived")]
+    survived: u8,
+}
+
+make_kd_tree!(3, u8, titanic_kd_tree);
+type DataSet = Vec<(titanic_kd_tree::Vector, Rc<titanic_kd_tree::TValue>)>;
+
+fn read_training_data() -> Result<DataSet, Box<Error>> {
     let file = File::open("data/train.csv").unwrap();
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .delimiter(b',')
         .flexible(true)
         .from_reader(file);
-    let mut result = vec![];
+    let mut result: Vec<TrainingPassangerDTO> = vec![];
     for record in reader.deserialize() {
-        // println!("{:#?}", record);
         result.push(record?);
     }
-    Ok(result)
+    Ok(result
+        .iter()
+        .map(|p| {
+            let sex = if p.sex.contains("female") { 1.0 } else { -1.0 };
+            let age = match p.age {
+                Some(a) => a,
+                None => 25.0,
+            };
+            (
+                [p.pclass as f32 * 1.5, sex * 5.0, age * 0.35],
+                Rc::new(p.survived),
+            )
+        })
+        .collect())
 }
 
-make_kd_tree!(2, TrainingPassangerDTO, titanic_kd_tree);
+fn run_test(split_n: usize) -> i32 {
+    let mut data: DataSet = read_training_data().unwrap();
+
+    thread_rng().shuffle(&mut data);
+    let (test, training) = data.split_at_mut(split_n);
+
+    let tree = titanic_kd_tree::new(training).unwrap();
+
+    let result: i32 = test
+        .iter()
+        .map(|passanger| {
+            let nearest = tree.find_k_nearest(passanger.0, 5);
+            let result: f32 = nearest.iter().map(|x| *x.2 as f32).sum();
+            let result = result / 5.0;
+            let actual = *passanger.1;
+            let result = if result < 0.5 { 0 } else { 1 };
+            if result == actual {
+                1
+            } else {
+                0
+            }
+        })
+        .sum();
+
+    let perc = result as f32 / split_n as f32 * 100 as f32;
+    println!("Final score: {} out of {} [{}%]", result, split_n, perc);
+    result
+}
+
+fn run_actual() {
+    let mut data: DataSet = read_training_data().unwrap();
+    let tree = titanic_kd_tree::new(&mut data).unwrap();
+}
 
 fn main() {
-    let result = read_training_data().unwrap();
-
-    let tree = titanic_kd_tree::new(vec![
-        ([1.0, 2.0], Rc::new(result[0].clone())),
-        ([1.0, 2.0], Rc::new(result[1].clone())),
-        ([1.0, 2.0], Rc::new(result[2].clone())),
-        ([1.0, 2.0], Rc::new(result[3].clone())),
-        ([1.0, 2.0], Rc::new(result[4].clone())),
-        ([1.0, 2.0], Rc::new(result[5].clone())),
-        ([1.0, 2.0], Rc::new(result[6].clone())),
-        ([1.0, 2.0], Rc::new(result[7].clone())),
-    ]).unwrap();
-
-    let result = tree.find_k_nearest([2.3, 5.8], 4);
-
-    println!("Done! {} {:#?}", result.len(), tree);
+    for _ in 0..20 {
+        run_test(100);
+    }
 }
