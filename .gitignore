@@ -1,2 +1,4 @@
 target
 Cargo.lock
+
+titanic/data/result\.csv
